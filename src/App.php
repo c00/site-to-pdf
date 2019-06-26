@@ -6,28 +6,33 @@ use Exception;
 use mikehaertl\wkhtmlto\Pdf;
 
 class App {
-    const DOMAIN_REGEX = '(?=^.{4,253}$)(^((?!-)[a-zA-Z0-9-]{1,63}(?<!-)\.)+[a-zA-Z]{2,63}$)';
-    const IP_REGEX = '\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b';
+    const DOMAIN_REGEX = '/(?=^.{4,253}$)(^((?!-)[a-zA-Z0-9-]{1,63}(?<!-)\.)+[a-zA-Z]{2,63}$)/';
+    const IP_REGEX = '/\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b/';
+
+    private $url;
+    private $domain;
+    private $cliMode = false;
 
     public $bin = 'xvfb-run wkhtmltopdf';
     public $allowedDomains = [];
     public $allowedIps = [];
     public $options = [];
+    public $outputFilename = 'document.pdf';
 
-    public $url;
-    public $domain;
-    public $verbose = false;
+    public function __construct() {
+        $this->loadSettings();
+    }
 
     public function run() {
-        $this->loadSettings();
+        if (!$this->isDomainAllowed()) throw new Exception("Target domain not white-listed.");
+        if (!$this->isIpAllowed()) throw new Exception("Request IP address not white-listed.");
 
-        if (!$this->isDomainAllowed()) throw new \Exception("Target domain not white-listed.");
-        if (!$this->isIpAllowed()) throw new \Exception("Request IP address not white-listed.");
-
-        $this->generate();
+        return $this->generate();
     }
 
     private function loadSettings() {
+        $this->cliMode = php_sapi_name() === 'cli';
+
         //From Environment
         $binary = getenv('WKHTMLTOPDF_BIN');
         if ($binary !== false) $this->bin = $binary;
@@ -52,13 +57,15 @@ class App {
         }
 
         //From Request
-        //todo check if decoding is done automatically
-        $this->url = filter_var($_GET['url'], FILTER_SANITIZE_URL);
-        $this->checkUrl();
+        if (!$this->cliMode) {
+            $url = filter_var($_GET['url'], FILTER_SANITIZE_URL);
+            $this->setUrl($url);
 
-        $this->verbose = isset($_GET['verbose']);
+            $this->outputFilename = filter_var($_GET['verbose'], FILTER_SANITIZE_STRING);
 
-        //todo load wkhtmltopdf settings from request
+            //todo load wkhtmltopdf settings from request
+        }
+
 
     }
     private function addOption($key, $value, $convert = true) {
@@ -70,14 +77,15 @@ class App {
         $this->options[$key] = $value;
     }
 
-    private function checkUrl() {
-        if (!$this->url) throw new Exception("No url");
+    public function setUrl(string $url) {
+        if (!$url) throw new Exception("No url");
 
-        if (!preg_match("^https?\:\/\/", $this->url)) {
-            throw new Exception("URLs should start with 'http://' or 'http://', Found: {$this->url}");
+        if (!preg_match("/^https?\:\/\//", $url)) {
+            throw new Exception("URLs should start with 'http://' or 'http://', Found: {$url}");
         }
-        $pieces = explode('/', $this->url);
+        $pieces = explode('/', $url);
         $this->domain = $pieces[2];
+        $this->url = $url;
     }
 
     private function checkDomains() {
@@ -105,6 +113,9 @@ class App {
 
     private function isIpAllowed(): bool
     {
+        //From the CLI, it's always good.
+        if ($this->cliMode) return true;
+
         if (empty($this->allowedIps)) return true;
 
         return in_array($this->getIp(), $this->allowedIps);
@@ -131,7 +142,7 @@ class App {
         $pdf->setOptions($this->options);
         $pdf->ignoreWarnings = true;
 
-        $fullPath = sys_get_temp_dir().'/'.$fileName;
+        $fullPath = sys_get_temp_dir().DIRECTORY_SEPARATOR.$fileName;
         $pdf->saveAs($fullPath);
 
         //Check if the PDF exists now.
@@ -142,17 +153,22 @@ class App {
             exit;
         }
 
-        //Return it
-        header('Content-Type: application/pdf');
-        header('Content-disposition: attachment; filename="Netques Export.pdf"');
-        header('Cache-Control: public, must-revalidate, max-age=0');
-        header('Pragma: public');
-        header('Expires: Sat, 26 Jul 1997 05:00:00 GMT');
-        header('Last-Modified: '.gmdate('D, d M Y H:i:s').' GMT');
-        readfile($fullPath);
+        if (!$this->cliMode) {
+            //Return it
+            header('Content-Type: application/pdf');
+            header('Content-disposition: attachment; filename="' . $this->outputFilename . '"');
+            header('Last-Modified: '.gmdate('D, d M Y H:i:s').' GMT');
+            readfile($fullPath);
 
-        //Delete temp file
-        unlink ($fullPath);
+            //Delete temp file
+            unlink ($fullPath);
+            return null;
+        } else {
+            $newPath = sys_get_temp_dir() . DIRECTORY_SEPARATOR . $this->outputFilename;
+            rename($fullPath, $newPath);
+            return $newPath;
+        }
+
     }
 
 }

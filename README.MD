@@ -28,8 +28,14 @@ WKHTMLTOPDF_OPTIONS_ZOOM=1
 WKHTMLTOPDF_OPTIONS_FOOTER_HTML="http://example.com/assets/footer.html"
 ```
 
-# Todo
+## Use for development
 
-Write tests
-Make dockerfile
-Upload docker image to docker hub
+```bash
+# Build docker image
+docker image build -t pdf:latest .
+# Run with php dev server
+docker container run -p=8888:8888 pdf php -S 0.0.0.0:8888 -t /app/src/public
+```
+
+Now you can test your image by going to: http://localhost:8888?url=http://www.google.com
+This should download Google.com to a PDF.
