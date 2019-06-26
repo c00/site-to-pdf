@@ -1,0 +1,11 @@
+version: '3'
+services:
+  nginx:
+    build: ./nginx
+    depends_on:
+      - htmltopdf
+    ports:
+      - "80:80"
+
+  htmltopdf:
+    image: crispyduck/html-to-pdf:1.0.0
